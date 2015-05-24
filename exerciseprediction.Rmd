@@ -1,5 +1,5 @@
 ---
-title: "Manner Exercise Prediction Using Measurement Body Devices"
+title: "Exercise Manner Prediction Using Measurement Body Devices"
 author: "Javier Monterrubio"
 date: "23/05/2015"
 output: html_document
@@ -51,7 +51,7 @@ inTrain <- createDataPartition(y=clean$classe, p=0.7, list=FALSE)
 training1 <- clean[inTrain,]
 testing1 <- clean[-inTrain,]
 train_control1 <- trainControl(method="cv", number=10)
-mod1 <- train(classe ~ ., data=clean, trControl = train_control1, method="rpart")
+mod1 <- train(classe ~ ., data=training1, trControl = train_control1, method="rpart")
 predictions1 <- predict(mod1,newdata=testing1)
 confusionMatrix(predictions1, testing1$classe)$overall[1]
 ```
@@ -61,37 +61,67 @@ forest in this case.
 
 ```{r}
 mod2 <- randomForest(classe ~ ., importance=TRUE, data=training1)
-predictions2 <- predict(mod2,newdata=testing1)
-confusionMatrix(predictions2, testing1$classe)$overall[1]
+mod2
 ```
 
-Good accuracy isn't it. Now we are goint to make a pair of researchs. First one 
+The OOB (Out Of Bag error rate) is very low so i seems that the prediction accuracy
+will be very high. Lets see it:
+
+```{r}
+predictions2 <- predict(mod2,newdata=testing1)
+confusionMatrix(predictions2, testing1$classe)
+```
+
+Good accuracy isn't it? Here we can have an overfitting problem if we don't do any
+cross validation. But before that, we are goint to make a pair of researchs. First one 
 is to see the the variable importance.
 
 ```{r}
 varImpPlot(mod2)
 ```
 
-And what happen if we remove some variable of the model.
+Just for fun we are going to see some patterns in the predictors:
+
+```{r}
+qplot(roll_belt,yaw_belt,color=classe,data=training1)
+```
+
+Again,what happen if we remove some predictors of the model?
 
 ```{r}
 result <- rfcv(training1[,-53],training1$classe)
 with(result, plot(n.var, error.cv, log="x", type="o", lwd=2))
 ```
 
-We can see that just with the first 15 the error is already 0.0. So selecting the
-15 most important variables:
+We can see that just with the first 15 the error is near 0.0. So selecting the
+15 most important prefictors:
 
 ```{r}
 mod3 <- randomForest(classe ~ roll_belt + yaw_belt + pitch_forearm + magnet_dumbbell_z +
                      magnet_dumbbell_y + pitch_belt + roll_forearm + magnet_dumbbell_x +
                      accel_dumbbell_y + magnet_belt_z + roll_dumbbell + accel_belt_z +
-                     magnet_belt_y + accel_forearm_x + accel_dumbbell_y, importance=TRUE, data=training1)
+                     magnet_belt_y + accel_forearm_x + accel_dumbbell_y, importance=TRUE,
+                     data=training1)
 predictions3 <- predict(mod3,newdata=testing1)
 confusionMatrix(predictions3, testing1$classe)$overall[1]
 ```
 
-Loosing a bit of accuracy but winning a lot of computation time.
+Loosing a bit of accuracy but winning a lot of computation time. So to avoid overfitting
+lets train a new model using cross validation with just the 15 more omportant predictors.
+
+```{r}
+train_control2 <- trainControl(method="cv", number=5)
+mod4 <- train(classe ~ roll_belt + yaw_belt + pitch_forearm + magnet_dumbbell_z +
+                     magnet_dumbbell_y + pitch_belt + roll_forearm + magnet_dumbbell_x +
+                     accel_dumbbell_y + magnet_belt_z + roll_dumbbell + accel_belt_z +
+                     magnet_belt_y + accel_forearm_x + accel_dumbbell_y,
+              trControl = train_control2, method="rf", data=training1)
+predictions4 <- predict(mod4,newdata=testing1)
+confusionMatrix(predictions4, testing1$classe)
+mod4
+plot(mod4, log = "y", lwd = 2, main = "RF accuracy", xlab = "Num predictors", 
+     ylab = "Accuracy")
+```
 
 Applying the model to predict the testing file:
 
@@ -99,4 +129,11 @@ Applying the model to predict the testing file:
 testing <- readsubdataset("testing")
 cleanTesting <- cleandataset(testing)
 predict(mod3,newdata=cleanTesting)
+```
+
+To estimate the out of sample error:
+
+```{r}
+error <- as.numeric(1 - confusionMatrix(predictions4, testing1$classe)$overall[1]) * 100
+paste0("Out of sample error estimation: ", round(error, digits = 2), "%")
 ```
